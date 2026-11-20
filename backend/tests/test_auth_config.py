@@ -93,6 +93,50 @@ class SettingsSecurityTests(unittest.TestCase):
             with self.assertRaises(ValidationError):
                 Settings(_env_file=None)
 
+    def test_render_postgres_url_is_normalized_for_asyncpg(self):
+        settings = Settings(
+            DATABASE_URL=(
+                "postgres://db-user:db-password@ep-example.neon.tech/app"
+                "?sslmode=require"
+            ),
+            JWT_SECRET_KEY=self.VALID_SECRET,
+        )
+
+        self.assertEqual(
+            settings.async_database_url,
+            "postgresql+asyncpg://db-user:db-password@ep-example.neon.tech/app"
+            "?ssl=require",
+        )
+
+    def test_sync_migration_url_uses_psycopg2(self):
+        settings = Settings(
+            DATABASE_URL="postgresql://db-user:db-password@db.example/app",
+            SYNC_DATABASE_URL=(
+                "postgresql://migration-user:migration-password@db.example/app"
+                "?sslmode=require"
+            ),
+            JWT_SECRET_KEY=self.VALID_SECRET,
+        )
+
+        self.assertEqual(
+            settings.alembic_database_url,
+            "postgresql+psycopg2://migration-user:migration-password"
+            "@db.example/app?sslmode=require",
+        )
+
+    def test_async_database_url_is_converted_for_sync_migrations(self):
+        settings = Settings(
+            DATABASE_URL=(
+                "postgresql+asyncpg://db-user:db-password@localhost/app"
+            ),
+            JWT_SECRET_KEY=self.VALID_SECRET,
+        )
+
+        self.assertEqual(
+            settings.alembic_database_url,
+            "postgresql+psycopg2://db-user:db-password@localhost/app",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

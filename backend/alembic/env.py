@@ -27,7 +27,7 @@ def run_migrations_offline() -> None:
     """Run migrations in 'offline' mode."""
 
     context.configure(
-        url=settings.DATABASE_URL,
+        url=settings.alembic_database_url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
@@ -45,10 +45,7 @@ def run_migrations_online() -> None:
         {},
     )
 
-    configuration["sqlalchemy.url"] = settings.DATABASE_URL.replace(
-        "+asyncpg",
-        "",
-    )
+    configuration["sqlalchemy.url"] = settings.alembic_database_url
 
     connectable = engine_from_config(
         configuration,

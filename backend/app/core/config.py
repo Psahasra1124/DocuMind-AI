@@ -2,6 +2,7 @@ from pathlib import Path
 
 from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import make_url
 
 
 DEFAULT_CORS_ORIGINS = (
@@ -10,8 +11,26 @@ DEFAULT_CORS_ORIGINS = (
 )
 
 
+def _postgres_url(database_url: str, driver: str) -> str:
+    url = make_url(database_url)
+    if url.get_backend_name() not in {"postgres", "postgresql"}:
+        raise ValueError("DATABASE_URL must use a PostgreSQL URL")
+
+    query = dict(url.query)
+    if driver == "asyncpg" and "sslmode" in query:
+        query.setdefault("ssl", query.pop("sslmode"))
+    elif driver == "psycopg2" and "ssl" in query:
+        query.setdefault("sslmode", query.pop("ssl"))
+
+    return url.set(
+        drivername=f"postgresql+{driver}",
+        query=query,
+    ).render_as_string(hide_password=False)
+
+
 class Settings(BaseSettings):
     DATABASE_URL: str
+    SYNC_DATABASE_URL: str | None = None
     JWT_SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60
@@ -34,6 +53,17 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore",
     )
+
+    @property
+    def async_database_url(self) -> str:
+        return _postgres_url(self.DATABASE_URL, "asyncpg")
+
+    @property
+    def alembic_database_url(self) -> str:
+        sync_url = self.SYNC_DATABASE_URL
+        if sync_url is None or not sync_url.strip():
+            sync_url = self.DATABASE_URL
+        return _postgres_url(sync_url, "psycopg2")
 
     @field_validator("MAX_UPLOAD_SIZE_MB")
     @classmethod
