@@ -20,9 +20,13 @@ class Settings(BaseSettings):
     EMBEDDING_MODEL: str = "all-MiniLM-L6-v2"
     VECTOR_STORE_DIR: Path = Path("vector_store")
     VECTOR_COLLECTION_NAME: str = "document_chunks"
+    LLM_PROVIDER: str = "ollama"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "gemma3:4b"
     OLLAMA_TIMEOUT_SECONDS: float = 300.0
+    GEMINI_API_KEY: str | None = None
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_TIMEOUT_SECONDS: float = 60.0
     MAX_UPLOAD_SIZE_MB: int = 25
 
     model_config = SettingsConfigDict(
@@ -36,6 +40,21 @@ class Settings(BaseSettings):
     def validate_max_upload_size(cls, value: int) -> int:
         if value < 1 or value > 250:
             raise ValueError("MAX_UPLOAD_SIZE_MB must be between 1 and 250")
+        return value
+
+    @field_validator("LLM_PROVIDER")
+    @classmethod
+    def validate_llm_provider(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in {"ollama", "gemini"}:
+            raise ValueError("LLM_PROVIDER must be 'ollama' or 'gemini'")
+        return normalized
+
+    @field_validator("GEMINI_TIMEOUT_SECONDS", "OLLAMA_TIMEOUT_SECONDS")
+    @classmethod
+    def validate_llm_timeout(cls, value: float) -> float:
+        if value <= 0:
+            raise ValueError("LLM timeout must be greater than 0")
         return value
 
     @field_validator("JWT_SECRET_KEY")

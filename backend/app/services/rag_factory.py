@@ -1,11 +1,19 @@
 from app.core.config import settings
 from app.services.llm.base import LLMProvider
+from app.services.llm.gemini import GeminiLLMProvider
 from app.services.llm.ollama import OllamaLLMProvider
 from app.services.rag import RagService
 from app.services.retrieval import Retriever
 
 
 def get_llm_provider() -> LLMProvider:
+    if settings.LLM_PROVIDER == "gemini":
+        return GeminiLLMProvider(
+            api_key=settings.GEMINI_API_KEY,
+            model_name=settings.GEMINI_MODEL,
+            timeout=settings.GEMINI_TIMEOUT_SECONDS,
+        )
+
     return OllamaLLMProvider(
         base_url=settings.OLLAMA_BASE_URL,
         model_name=settings.OLLAMA_MODEL,

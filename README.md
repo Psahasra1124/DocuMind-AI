@@ -80,6 +80,7 @@ DocuMind AI addresses this problem by:
 - Sentence Transformers
 - ChromaDB
 - Ollama HTTP API
+- Google Gemini API
 
 ### Data and Infrastructure
 
@@ -115,7 +116,10 @@ Nginx --> FastAPI API
               +--> Chroma persistent vector store
               |
               +--> Ollama
-                   - Gemma 3 4B (default)
+                   - Gemma 3 4B (local default)
+              |
+              +--> Google Gemini API
+                   - gemini-2.5-flash (cloud option)
 ```
 
 The Docker deployment runs PostgreSQL, Ollama, the FastAPI backend, and the Nginx frontend in a shared Compose network. Uploaded files and the persistent vector index are stored in Docker volumes.
@@ -204,6 +208,28 @@ JWT_SECRET_KEY=<random-secret-of-at-least-32-characters>
 ```
 
 Keep `.env` private and do not publish real secrets. The default Ollama model is `gemma3:4b`, the default embedding model is `all-MiniLM-L6-v2`, and the default upload limit is 25 MB.
+
+#### Choose the LLM provider
+
+Local Ollama development:
+
+```dotenv
+LLM_PROVIDER=ollama
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=gemma3:4b
+OLLAMA_TIMEOUT_SECONDS=300
+```
+
+Google Gemini cloud deployment:
+
+```dotenv
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=<your-google-gemini-api-key>
+GEMINI_MODEL=gemini-2.5-flash
+GEMINI_TIMEOUT_SECONDS=60
+```
+
+Set `GEMINI_API_KEY` only in backend or deployment environment variables. The key is never added to React/Vite code or sent to the frontend.
 
 ### 3. Docker setup (recommended)
 

@@ -1,44 +1,94 @@
+from dataclasses import dataclass
 from typing import Any
+
+from app.services.llm.base import LLMProvider
+from app.services.retrieval import RetrievalResult, Retriever
+
+
+@dataclass(frozen=True)
+class RagContext:
+    query: str
+    context: str
+    sources: list[RetrievalResult]
+
+
+@dataclass(frozen=True)
+class RagResponse:
+    query: str
+    answer: str
+    context: RagContext
+    sources: list[RetrievalResult]
 
 
 def build_rag_prompt(query: str, context: Any) -> str:
-    if not context or not context.context:
-        return (
-            "The uploaded documents do not contain enough relevant "
-            "information to answer this question."
+    context_text = context.context if context and context.context else ""
+    return f"Question:\n{query}\n\nContext:\n{context_text}"
+
+
+class RagService:
+    """Build owner-scoped context and generate a document-grounded answer."""
+
+    def __init__(
+        self,
+        retriever: Retriever,
+        llm_provider: LLMProvider | None = None,
+    ) -> None:
+        self.retriever = retriever
+        self.llm_provider = llm_provider
+
+    def build_context(
+        self,
+        query: str,
+        top_k: int = 5,
+        owner_id: str = "",
+    ) -> RagContext:
+        if not query.strip():
+            raise ValueError("query must not be empty")
+        if not owner_id:
+            raise ValueError("owner_id must not be empty")
+
+        sources = self.retriever.retrieve(
+            query=query,
+            top_k=top_k,
+            owner_id=owner_id,
         )
 
-    return f"""
-You are DocuMind AI, an intelligent document assistant.
+        context_parts = []
+        for index, source in enumerate(sources, start=1):
+            page_number = source.metadata.get("page_number")
+            label = f"Source {index}"
+            if page_number not in (None, ""):
+                label = f"{label} — Page {page_number}"
+            context_parts.append(f"[{label}]\n{source.text}")
 
-Answer the user's question using ONLY the retrieved document context.
+        return RagContext(
+            query=query,
+            context="\n\n".join(context_parts),
+            sources=sources,
+        )
 
-STRICT RULES:
-1. Always provide the actual answer, not just a citation.
-2. Answer every question separately when multiple questions are asked.
-3. Every factual answer must include its supporting source citation.
-4. Use the exact source labels available in the retrieved context.
-5. Include the page number whenever available.
-6. Never invent information, sources, or page numbers.
-7. If information is unavailable, clearly say so.
-8. Use simple, professional language.
-9. Do not repeat the same answer unnecessarily.
+    def generate_answer(
+        self,
+        query: str,
+        top_k: int = 5,
+        owner_id: str = "",
+    ) -> RagResponse:
+        if not owner_id:
+            raise ValueError("owner_id must not be empty")
+        if self.llm_provider is None:
+            raise ValueError("LLM provider is required")
 
-REQUIRED ANSWER FORMAT:
+        context = self.build_context(
+            query=query,
+            top_k=top_k,
+            owner_id=owner_id,
+        )
+        prompt = build_rag_prompt(query, context)
+        answer = self.llm_provider.generate(prompt)
 
-1. Answer: [Write the actual answer here]
-   Citation: [Source N — Page X]
-
-2. Answer: [Write the actual answer here]
-   Citation: [Source N — Page X]
-
-IMPORTANT:
-A citation alone is NOT an answer.
-Always explain the information before giving its citation.
-
-USER QUESTION:
-{query}
-
-RETRIEVED DOCUMENT CONTEXT:
-{context.context}
-"""
+        return RagResponse(
+            query=query,
+            answer=answer,
+            context=context,
+            sources=context.sources,
+        )

@@ -9,7 +9,11 @@ os.environ.setdefault(
 os.environ.setdefault("JWT_SECRET_KEY", "test-only-jwt-secret-key-32-bytes-long")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 
-from app.services.llm import LLMProvider, OllamaLLMProvider
+from app.services.llm import (
+    GeminiLLMProvider,
+    LLMProvider,
+    OllamaLLMProvider,
+)
 from app.services.rag import RagService
 from app.services.rag_factory import (
     get_llm_provider,
@@ -45,6 +49,28 @@ class RagDependencyTests(unittest.TestCase):
             provider.timeout,
             77.0,
         )
+
+    def test_get_llm_provider_returns_gemini_provider_from_settings(self):
+        with patch(
+            "app.services.rag_factory.settings.LLM_PROVIDER",
+            "gemini",
+        ), patch(
+            "app.services.rag_factory.settings.GEMINI_API_KEY",
+            "test-api-key",
+        ), patch(
+            "app.services.rag_factory.settings.GEMINI_MODEL",
+            "gemini-test",
+        ), patch(
+            "app.services.rag_factory.settings.GEMINI_TIMEOUT_SECONDS",
+            88.0,
+        ):
+            provider = get_llm_provider()
+
+        self.assertIsInstance(provider, GeminiLLMProvider)
+        self.assertIsInstance(provider, LLMProvider)
+        self.assertEqual(provider.api_key, "test-api-key")
+        self.assertEqual(provider.model_name, "gemini-test")
+        self.assertEqual(provider.timeout, 88.0)
 
     def test_get_rag_service_receives_existing_retriever(self):
         retriever = Mock()
