@@ -48,7 +48,7 @@ __pycache__/
 # OS
 .DS_Store
 
-vector_store/
+/backend/vector_store/
 /frontend/node_modules/
 /frontend/dist/
 /frontend/.env
