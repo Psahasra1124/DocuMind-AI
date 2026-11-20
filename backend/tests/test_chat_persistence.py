@@ -1,0 +1,755 @@
+import unittest
+from unittest.mock import AsyncMock, Mock
+
+from app.db.models import Conversation, Message
+from app.services.chat_persistence import ChatPersistenceService
+
+
+class AsyncScalarResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one_or_none(self):
+        return self.value
+
+
+class AsyncScalarsResult:
+    def __init__(self, values):
+        self.values = values
+
+    def scalars(self):
+        return self
+
+    def all(self):
+        return self.values
+
+
+class AsyncScalarCountResult:
+    def __init__(self, value):
+        self.value = value
+
+    def scalar_one(self):
+        return self.value
+
+
+class ChatPersistenceServiceTests(unittest.IsolatedAsyncioTestCase):
+    def setUp(self):
+        self.db = Mock()
+
+        self.db.execute = AsyncMock()
+        self.db.delete = AsyncMock()
+        self.db.commit = AsyncMock()
+        self.db.refresh = AsyncMock()
+
+        self.service = ChatPersistenceService(
+            self.db,
+        )
+
+    async def test_create_conversation_persists_for_owner(self):
+        owner_id = "11111111-1111-4111-8111-111111111111"
+
+        conversation = await self.service.create_conversation(
+            owner_id=__import__("uuid").UUID(owner_id),
+        )
+
+        self.db.add.assert_called_once()
+
+        persisted = self.db.add.call_args.args[0]
+
+        self.assertIsInstance(
+            persisted,
+            Conversation,
+        )
+        self.assertEqual(
+            persisted.owner_id,
+            __import__("uuid").UUID(owner_id),
+        )
+        self.assertIs(
+            conversation,
+            persisted,
+        )
+
+        self.db.commit.assert_awaited_once_with()
+        self.db.refresh.assert_awaited_once_with(
+            persisted,
+        )
+
+    async def test_get_conversations_returns_only_owner_conversations_in_deterministic_order(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+
+        conversations = [
+            Conversation(owner_id=owner_id),
+            Conversation(owner_id=owner_id),
+        ]
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(2),
+                AsyncScalarsResult(conversations),
+            ],
+        )
+
+        result, total_count = await self.service.get_conversations(
+            owner_id=owner_id,
+        )
+
+        self.assertEqual(
+            result,
+            conversations,
+        )
+        self.assertEqual(
+            total_count,
+            2,
+        )
+        self.assertEqual(
+            self.db.execute.await_count,
+            2,
+        )
+
+        count_statement = self.db.execute.await_args_list[0].args[0]
+        items_statement = self.db.execute.await_args_list[1].args[0]
+
+        count_sql = str(
+            count_statement.compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+        items_sql = str(
+            items_statement.compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+
+        self.assertIn("owner_id", count_sql)
+        self.assertIn("owner_id", items_sql)
+        self.assertIn(owner_id.hex, count_sql)
+        self.assertIn(owner_id.hex, items_sql)
+        self.assertIn("created_at DESC", items_sql)
+        self.assertIn("id DESC", items_sql)
+
+    async def test_get_conversations_default_page_returns_first_page_and_total_count(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversations = [
+            Conversation(owner_id=owner_id),
+            Conversation(owner_id=owner_id),
+        ]
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(25),
+                AsyncScalarsResult(conversations),
+            ],
+        )
+
+        result, total_count = await self.service.get_conversations(
+            owner_id=owner_id,
+        )
+
+        self.assertEqual(result, conversations)
+        self.assertEqual(total_count, 25)
+
+        statement = self.db.execute.await_args_list[1].args[0]
+
+        self.assertEqual(statement._limit_clause.value, 20)
+        self.assertEqual(statement._offset_clause.value, 0)
+
+    async def test_get_conversations_search_filters_by_title(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversation = Conversation(
+            owner_id=owner_id,
+            title="Quarterly Report",
+        )
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(1),
+                AsyncScalarsResult([conversation]),
+            ],
+        )
+
+        result, total_count = await self.service.get_conversations(
+            owner_id=owner_id,
+            search="report",
+        )
+
+        self.assertEqual(result, [conversation])
+        self.assertEqual(total_count, 1)
+
+        count_statement = self.db.execute.await_args_list[0].args[0]
+        items_statement = self.db.execute.await_args_list[1].args[0]
+
+        count_sql = str(
+            count_statement.compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+        items_sql = str(
+            items_statement.compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+
+        self.assertIn("title", count_sql)
+        self.assertIn("title", items_sql)
+        self.assertIn("report", count_sql)
+        self.assertIn("report", items_sql)
+
+    async def test_get_conversations_search_total_count_is_before_pagination(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversations = [
+            Conversation(
+                owner_id=owner_id,
+                title="Report 4",
+            ),
+            Conversation(
+                owner_id=owner_id,
+                title="Report 5",
+            ),
+        ]
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(5),
+                AsyncScalarsResult(conversations),
+            ],
+        )
+
+        result, total_count = await self.service.get_conversations(
+            owner_id=owner_id,
+            search="report",
+            page=3,
+            page_size=2,
+        )
+
+        self.assertEqual(result, conversations)
+        self.assertEqual(total_count, 5)
+
+        items_statement = self.db.execute.await_args_list[1].args[0]
+
+        self.assertEqual(items_statement._limit_clause.value, 2)
+        self.assertEqual(items_statement._offset_clause.value, 4)
+
+    async def test_get_conversations_pagination_returns_correct_slice(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversations = [
+            Conversation(owner_id=owner_id),
+            Conversation(owner_id=owner_id),
+        ]
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(7),
+                AsyncScalarsResult(conversations),
+            ],
+        )
+
+        result, total_count = await self.service.get_conversations(
+            owner_id=owner_id,
+            page=2,
+            page_size=2,
+        )
+
+        self.assertEqual(result, conversations)
+        self.assertEqual(total_count, 7)
+
+        statement = self.db.execute.await_args_list[1].args[0]
+
+        self.assertEqual(statement._limit_clause.value, 2)
+        self.assertEqual(statement._offset_clause.value, 2)
+
+    async def test_get_conversations_beyond_available_results_returns_empty_page(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(3),
+                AsyncScalarsResult([]),
+            ],
+        )
+
+        result, total_count = await self.service.get_conversations(
+            owner_id=owner_id,
+            page=3,
+            page_size=2,
+        )
+
+        self.assertEqual(result, [])
+        self.assertEqual(total_count, 3)
+
+    async def test_get_conversations_search_is_applied_to_title_only(
+        self,
+    ):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarCountResult(0),
+                AsyncScalarsResult([]),
+            ],
+        )
+
+        await self.service.get_conversations(
+            owner_id=owner_id,
+            search="report",
+        )
+
+        count_statement = self.db.execute.await_args_list[0].args[0]
+        items_statement = self.db.execute.await_args_list[1].args[0]
+
+        count_sql = str(
+            count_statement.compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+        items_sql = str(
+            items_statement.compile(
+                compile_kwargs={"literal_binds": True}
+            )
+        )
+
+        for sql in (count_sql, items_sql):
+            self.assertIn("owner_id", sql)
+            self.assertIn("title", sql)
+
+    async def test_get_conversation_returns_owned_conversation(self):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversation_id = UUID(
+            "22222222-2222-4222-8222-222222222222"
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=owner_id,
+        )
+
+        self.db.execute = AsyncMock(
+            return_value=AsyncScalarResult(
+                conversation,
+            )
+        )
+
+        result = await self.service.get_conversation(
+            owner_id=owner_id,
+            conversation_id=conversation_id,
+        )
+
+        self.assertIs(
+            result,
+            conversation,
+        )
+        self.db.execute.assert_awaited_once()
+
+    async def test_get_conversation_missing_is_explicit(self):
+        from uuid import UUID
+
+        self.db.execute = AsyncMock(
+            return_value=AsyncScalarResult(None),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "conversation not found",
+        ):
+            await self.service.get_conversation(
+                owner_id=UUID(
+                    "11111111-1111-4111-8111-111111111111"
+                ),
+                conversation_id=UUID(
+                    "22222222-2222-4222-8222-222222222222"
+                ),
+            )
+
+    async def test_wrong_owner_cannot_retrieve_conversation(self):
+        from uuid import UUID
+
+        self.db.execute = AsyncMock(
+            return_value=AsyncScalarResult(None),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "conversation not found",
+        ):
+            await self.service.get_conversation(
+                owner_id=UUID(
+                    "33333333-3333-4333-8333-333333333333"
+                ),
+                conversation_id=UUID(
+                    "22222222-2222-4222-8222-222222222222"
+                ),
+            )
+
+    async def test_delete_conversation_removes_messages_and_conversation(
+        self,
+    ):
+        owner_id = __import__("uuid").UUID(
+            "11111111-1111-4111-8111-111111111111",
+        )
+        conversation_id = __import__("uuid").UUID(
+            "22222222-2222-4222-8222-222222222222",
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=owner_id,
+        )
+
+        self.db.execute.side_effect = [
+            AsyncScalarResult(conversation),
+            Mock(),
+        ]
+
+        await self.service.delete_conversation(
+            owner_id=owner_id,
+            conversation_id=conversation_id,
+        )
+
+        self.assertEqual(self.db.execute.await_count, 2)
+        self.db.delete.assert_awaited_once_with(conversation)
+        self.db.commit.assert_awaited_once()
+    async def test_delete_conversation_rejects_missing_or_foreign_conversation(
+        self,
+    ):
+        self.db.execute.return_value = AsyncScalarResult(None)
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "conversation not found",
+        ):
+            await self.service.delete_conversation(
+                owner_id=__import__("uuid").UUID(
+                    "11111111-1111-4111-8111-111111111111",
+                ),
+                conversation_id=__import__("uuid").UUID(
+                    "22222222-2222-4222-8222-222222222222",
+                ),
+            )
+
+        self.db.commit.assert_not_awaited()
+
+    async def test_append_user_message(self):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversation_id = UUID(
+            "22222222-2222-4222-8222-222222222222"
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=owner_id,
+        )
+
+        self.db.execute = AsyncMock(
+            return_value=AsyncScalarResult(
+                conversation,
+            )
+        )
+
+        message = await self.service.append_message(
+            owner_id=owner_id,
+            conversation_id=conversation_id,
+            role="user",
+            content="hello",
+            sequence_number=1,
+        )
+
+        persisted = self.db.add.call_args.args[0]
+
+        self.assertIsInstance(
+            persisted,
+            Message,
+        )
+        self.assertIs(
+            message,
+            persisted,
+        )
+        self.assertEqual(
+            persisted.conversation_id,
+            conversation_id,
+        )
+        self.assertEqual(
+            persisted.role,
+            "user",
+        )
+        self.assertEqual(
+            persisted.content,
+            "hello",
+        )
+        self.assertEqual(
+            persisted.sequence_number,
+            1,
+        )
+
+        self.db.commit.assert_awaited_once_with()
+        self.db.refresh.assert_awaited_once_with(
+            persisted,
+        )
+
+    async def test_append_message_rejects_missing_or_foreign_conversation(
+        self,
+    ):
+        from uuid import UUID
+
+        self.db.execute = AsyncMock(
+            return_value=AsyncScalarResult(None),
+        )
+
+        with self.assertRaisesRegex(
+            ValueError,
+            "conversation not found",
+        ):
+            await self.service.append_message(
+                owner_id=UUID(
+                    "33333333-3333-4333-8333-333333333333"
+                ),
+                conversation_id=UUID(
+                    "22222222-2222-4222-8222-222222222222"
+                ),
+                role="assistant",
+                content="answer",
+                sequence_number=2,
+            )
+
+        self.db.add.assert_not_called()
+        self.db.commit.assert_not_awaited()
+
+    async def test_get_next_sequence_number_starts_at_one(self):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversation_id = UUID(
+            "22222222-2222-4222-8222-222222222222"
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=owner_id,
+        )
+
+        scalar = Mock()
+        scalar.scalar_one.return_value = 0
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarResult(conversation),
+                scalar,
+            ],
+        )
+
+        result = (
+            await self.service.get_next_sequence_number(
+                owner_id=owner_id,
+                conversation_id=conversation_id,
+            )
+        )
+
+        self.assertEqual(
+            result,
+            1,
+        )
+
+    async def test_get_next_sequence_number_follows_existing_messages(self):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversation_id = UUID(
+            "22222222-2222-4222-8222-222222222222"
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=owner_id,
+        )
+
+        scalar = Mock()
+        scalar.scalar_one.return_value = 4
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarResult(conversation),
+                scalar,
+            ],
+        )
+
+        result = (
+            await self.service.get_next_sequence_number(
+                owner_id=owner_id,
+                conversation_id=conversation_id,
+            )
+        )
+
+        self.assertEqual(
+            result,
+            5,
+        )
+
+    async def test_get_messages_returns_deterministic_sequence_order(self):
+        from uuid import UUID
+
+        owner_id = UUID(
+            "11111111-1111-4111-8111-111111111111"
+        )
+        conversation_id = UUID(
+            "22222222-2222-4222-8222-222222222222"
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=owner_id,
+        )
+
+        messages = [
+            Message(
+                conversation_id=conversation_id,
+                role="user",
+                content="first",
+                sequence_number=1,
+            ),
+            Message(
+                conversation_id=conversation_id,
+                role="assistant",
+                content="second",
+                sequence_number=2,
+            ),
+        ]
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarResult(conversation),
+                AsyncScalarsResult(messages),
+            ],
+        )
+
+        result = await self.service.get_messages(
+            owner_id=owner_id,
+            conversation_id=conversation_id,
+        )
+
+        self.assertEqual(
+            result,
+            messages,
+        )
+        self.assertEqual(
+            [message.sequence_number for message in result],
+            [1, 2],
+        )
+
+        self.assertEqual(
+            self.db.execute.await_count,
+            2,
+        )
+
+    async def test_empty_history_returns_empty_list(self):
+        from uuid import UUID
+
+        conversation_id = UUID(
+            "22222222-2222-4222-8222-222222222222"
+        )
+
+        conversation = Conversation(
+            id=conversation_id,
+            owner_id=UUID(
+                "11111111-1111-4111-8111-111111111111"
+            ),
+        )
+
+        self.db.execute = AsyncMock(
+            side_effect=[
+                AsyncScalarResult(conversation),
+                AsyncScalarsResult([]),
+            ],
+        )
+
+        result = await self.service.get_messages(
+            owner_id=conversation.owner_id,
+            conversation_id=conversation_id,
+        )
+
+        self.assertEqual(
+            result,
+            [],
+        )
+
+    async def test_database_failures_propagate(self):
+        self.db.commit = AsyncMock(
+            side_effect=RuntimeError("database failure"),
+        )
+
+        with self.assertRaisesRegex(
+            RuntimeError,
+            "database failure",
+        ):
+            await self.service.create_conversation(
+                owner_id=__import__("uuid").UUID(
+                    "11111111-1111-4111-8111-111111111111"
+                ),
+            )
+
+    async def test_service_can_be_instantiated_with_async_session(self):
+        from sqlalchemy.ext.asyncio import AsyncSession
+
+        session = Mock(spec=AsyncSession)
+
+        service = ChatPersistenceService(
+            db=session,
+        )
+
+        self.assertIs(
+            service.db,
+            session,
+        )
+
+
+if __name__ == "__main__":
+    unittest.main()

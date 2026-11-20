@@ -1,0 +1,252 @@
+# Project Context
+
+## Implemented
+- FastAPI application shell exists in `backend/app/main.py`.
+- User auth routes exist in `backend/app/api/routes/auth.py`.
+- JWT creation and password hashing exist in `backend/app/core/security/auth.py`.
+- PostgreSQL async database configuration exists in `backend/app/db/database.py`.
+- SQLAlchemy user model exists in `backend/app/db/models.py`.
+- Alembic is configured and a user migration exists in `backend/alembic/versions/7c16b04319c9_create_users_table.py`.
+- Docker Compose defines a PostgreSQL service and backend service in `docker-compose.yml`.
+- The auth configuration mismatch regression was fixed in the repository by updating JWT and database settings references to use the uppercase configuration attributes.
+- Commit `c0d75c9` contains the completed JWT configuration fix and is already pushed to `origin/main`.
+- Document SQLAlchemy model exists in `backend/app/db/models.py`.
+- Document Alembic migration exists in `backend/alembic/versions/b8e6d2f4a913_add_documents_table.py`.
+- Focused document model and migration tests exist in `backend/tests/test_document_model_migration.py`.
+- Document upload request validation exists in `backend/app/services/document_validation.py`.
+- Validation supports PDF, DOCX, and TXT files and checks filename presence, length, path separators, invalid characters, file extension, and extension/content-type consistency.
+- Focused document upload validation tests exist in `backend/tests/test_document_validation.py`.
+- Authenticated document upload endpoint skeleton exists at `POST /documents/upload`.
+- The endpoint reuses document upload validation and does not yet perform file storage, database persistence, parsing, or processing.
+- Focused document upload endpoint tests exist in `backend/tests/test_document_upload_endpoint.py`.
+- Local document storage service exists in `backend/app/services/document_storage.py`.
+- Document storage paths are generated uniquely and scoped by document owner.
+- The storage service creates owner directories, writes uploaded files locally, prevents overwriting existing files, and removes partial files when a write operation fails.
+- Focused document storage tests exist in `backend/tests/test_document_storage.py`.
+- Document parser abstraction exists in `backend/app/services/document_parsers/base.py`.
+- Parser selection exists for PDF, DOCX, and TXT document types.
+- Unsupported document types are rejected by the parser selector.
+- Focused document parser abstraction, selection, and real-file text extraction tests exist in `backend/tests/test_document_parsers.py`.
+- PDF text extraction is implemented using `pypdf`.
+- DOCX text extraction is implemented using `python-docx`.
+- TXT text extraction is implemented using UTF-8 file reading.
+- Document text chunking is implemented in `backend/app/services/document_chunking.py`.
+- Chunking uses deterministic character-based chunks with configurable chunk size and overlap.
+- Invalid chunking configuration is rejected with `ValueError`.
+- Focused document chunking tests exist in `backend/tests/test_document_chunking.py`.
+- A provider-independent embedding abstraction exists in `backend/app/services/embeddings/base.py`.
+- The embedding abstraction defines single-text and ordered batch embedding contracts.
+- A local `sentence-transformers` embedding provider is implemented in `backend/app/services/embeddings/sentence_transformer.py`.
+- The concrete provider accepts an explicit model name and does not define a default model or provider configuration yet.
+- Focused embedding abstraction tests exist in `backend/tests/test_embeddings.py`.
+- Focused sentence-transformers provider tests exist in `backend/tests/test_sentence_transformer_embeddings.py`.
+
+## In Progress
+- No implementation task is currently in progress.
+
+## Planned
+
+## Unknown
+
+## Known Issues
+- No documentation-only issues are currently tracked here.
+
+## Completed Tasks
+- Task 1: Inspect Configuration & Authentication Architecture — completed.
+- Task 2: Fix JWT Settings Attribute Mismatch — completed in commit `c0d75c9` and pushed to `origin/main`.
+- Task 3: Document Model + Alembic Migration — completed in commit `feat(db): add document model and migration`.
+- Task 4: Add document upload request validation — completed in commit `3b8bdf6` and pushed to `origin/main`.
+- Task 5: Add document upload endpoint skeleton — completed locally and verified with focused and full test suites.
+- Task 6: Add local document storage service — completed and committed.
+- Task 7: Persist uploaded document metadata and connect the upload flow to the Document model — completed in commit `34aaf4a` and pushed to `origin/main`.
+- Task 8: Add document parser abstraction and parser selection — completed and verified.
+- Task 9: Implement document text extraction using the parser abstraction — completed and verified with real TXT, PDF, and DOCX files.
+- Task 10: Implement document text chunking for extracted document content — completed in commit `c7a1bb1` and pushed to `origin/main`.
+- Task 11 Batch 1: Add provider-independent embedding abstraction — completed in commit `2f02c3c` and pushed to `origin/main`.
+- Task 11 Batch 2: Implement local `sentence-transformers` embedding provider — completed and verified.
+- Task 11 Batch 3: Add vector-store abstraction and local persistent Chroma backend — completed and verified.
+- Task 12 Batch 1: Add document indexing orchestration service — completed in commit `f1563c7` and verified.
+- Task 12 Batch 2: Integrate document indexing with document upload — completed and verified.
+- Task 13 Batch 1: Add provider-independent retrieval service — completed and verified.
+- Task 13 Batch 2: Add authenticated retrieval API endpoint — completed and verified.
+- Task 14 Batch 1: Add provider-independent RAG context service — completed and verified.
+- Task 14 Batch 2: Add provider-independent LLM provider abstraction — completed and verified.
+- Task 14 Batch 3: Connect `RagService` to the `LLMProvider` boundary — completed and verified.
+- Task 14 Batch 4: Implement concrete local Ollama LLM provider — completed and verified.
+- Task 14 Batch 5: Wire Ollama provider into application-level `RagService` — completed and verified.
+- Task 15: Add application-level `ChatService` — completed and verified.
+- Task 16: Add authenticated `POST /chat` Chat API endpoint — completed and verified.
+- Task 17: Add Conversation persistence model and Alembic migration — completed and verified.
+- Task 18: Add Message persistence model and Alembic migration — completed and verified.
+- Task 19: Add Chat Persistence Service for conversations and messages — completed and verified.
+- Task 20: Persist chat interactions through `ChatService` — completed and verified.
+- Task 21: Add authenticated conversation history endpoints — completed and verified.
+- Task 22: Add frontend foundation and authentication — completed and verified.
+- Task 23: Add dashboard and document upload — completed and verified.
+
+## Current Task
+- Task 25 — Application Workflow: CLOSED.
+- Batch 1 — Document-to-Chat Workflow Integration: CLOSED.
+- Batch 2A — Provider-Independent Vector Deletion: CLOSED.
+- Batch 2B1 — VectorStore Application Wiring: CLOSED.
+- Batch 2B2 — Safe Backend Document Deletion: CLOSED.
+- Batch 2B3 — Frontend Document Deletion Flow: CLOSED.
+- Task 26 — Conversation Management: CLOSED.
+- Batch 1 — Safe Backend Conversation Deletion: CLOSED.
+- Batch 2 — Frontend Conversation Deletion Flow: CLOSED.
+- Task 27 — Conversation Titles: CLOSED.
+- Task 28 — Document Context Visibility: CLOSED.
+- Chat now loads the authenticated user's existing documents independently from conversation loading.
+- The chat UI shows document availability without blocking conversation/history/message interaction.
+- Document availability has explicit loading, success, empty, and retryable error states.
+- Empty document state provides a direct path back to the Dashboard for document upload.
+- Existing typed documents API is reused; no new backend endpoint was added.
+- No document selection, filtering, polling, RAG, retrieval, embedding, LLM, or backend workflow changes were introduced.
+- Task 29 — UI Design System & Application Shell: CLOSED.
+- The shared authenticated shell owns top-level application navigation, New Chat, authenticated user context, and logout.
+- `/app` and `/app/chat` are rendered through the shared shell under the existing ProtectedRoute.
+- The shell uses a centralized neutral design-token system with responsive sidebar behavior and accessible focus states.
+- Task 30 — Dashboard & Documents Redesign: CLOSED.
+- Task 31 — Chat Workspace Redesign: CLOSED.
+- Chat redesign is presentation-only and preserves the existing conversation, history, deletion, document-context, send, loading, error, retry, logout, and navigation behavior.
+- The Chat Workspace uses the shared light/dark theme and Task 29/30 design tokens.
+- Dashboard/Documents visual redesign is presentation-only and reuses the existing document API/contracts.
+- User-selectable Light and Dark themes are implemented through the shared frontend design-token system.
+- Theme preference is persisted locally and initialized from the user's system preference when no saved preference exists.
+- The redesign covers the Dashboard workspace, document list/cards, upload experience, document deletion presentation, empty/loading/error states, Document-to-Chat CTA presentation, and responsive behavior.
+- Task 32 — Accessibility & Responsive QA: CLOSED.
+- Task 33 — RAG Source Transparency: CLOSED.
+- Batch 1 — RAG Source Contract: CLOSED.
+- Batch 2 — Frontend RAG Source / Citation UI: CLOSED.
+- The verified source pipeline is:
+  RetrievalResult[]
+      ↓
+  RagContext.sources
+      ↓
+  RagResponse.sources
+      ↓
+  ChatResponse.sources
+      ↓
+  HTTP ChatResponse.sources
+      ↓
+  Frontend source display
+- Frontend source display uses only the verified backend source fields: `text`, `document_id`, `chunk_index`, `distance`, and `metadata`.
+- Source data is derived directly from actual retrieval results.
+- No fabricated page numbers, URLs, or confidence scores are presented.
+- No provider-specific source data is exposed to frontend consumers.
+- Source order follows backend retrieval order.
+- Empty retrieval produces an empty source collection with no fabricated source.
+- Frontend source display is implemented in the Chat workspace.
+- Task 34 — RAG Evaluation & Quality Measurement: CLOSED.
+- Batch 1 — Evaluation Dataset & Retrieval Metrics: CLOSED.
+- Batch 2 — Real Retrieval Evaluation & Results Reporting: CLOSED.
+- Controlled evaluation corpus: `backend/evaluation/corpus/`.
+- The corpus contains three repository-owned synthetic documents and is indexed using the existing parser, chunking, `DocumentIndexer`, embedding provider, and Chroma implementation.
+- Evaluation is performed at chunk level using the stable `<document_id>:<chunk_index>` key.
+- Evaluation dataset: `backend/evaluation/retrieval_v1.json`.
+- The evaluation dataset contains 6 controlled cases whose relevance labels correspond to actual indexed chunks.
+- Real retrieval execution uses the existing `Retriever` with the existing `all-MiniLM-L6-v2` embedding provider and an isolated temporary Chroma vector store.
+- Evaluated K values: 1, 3, and 5.
+- Recall@1 = 0.75, Recall@3 = 0.8333333333333334, Recall@5 = 0.8333333333333334.
+- Precision@1 = 0.8333333333333334, Precision@3 = 0.3333333333333333, Precision@5 = 0.20000000000000004.
+- HitRate@1 = 0.8333333333333334, HitRate@3 = 0.8333333333333334, HitRate@5 = 0.8333333333333334.
+- Repeated real evaluation runs produced identical metric values for K=1, K=3, and K=5.
+- The real evaluation uses an isolated temporary vector store and does not modify the normal project vector-store data.
+- The evaluation framework remains lightweight and provider-independent at the metric layer.
+- The reported measurements represent controlled retrieval quality only and are not production accuracy or a universal benchmark.
+- Task 35 — RAG Answer Quality & Groundedness: CLOSED.
+- Task 36 — Production Configuration & Security Hardening: CLOSED.
+- Task 37 — Reliability Hardening: CLOSED.
+  - Batch 1 — Safe internal HTTP 500 handling: CLOSED.
+  - Batch 2 — Registration IntegrityError handling: CLOSED.
+  - Batch 3 — Document lifecycle consistency: CLOSED.
+  - Batch 4 — Transactional chat exchange: CLOSED.
+  - Batch 5 — Endpoint reliability test hardening: CLOSED.
+- Task 38 — End-to-End Product Verification: CLOSED / VERIFIED.
+- Task 38 verified the live backend/frontend product journey across authentication, document upload, document indexing, retrieval, RAG with Ollama, source evidence, conversation history and persistence, document deletion, and failure-path behavior.
+- Task 38 historical verification: backend and frontend regression suites passed for that task's verified baseline.
+- Task 38 required a safe exception-logging adjustment in `backend/app/main.py` and CPU-only Torch runtime selection in `backend/requirements.txt` for the verified local E2E environment because CUDA was unavailable on the current machine. This was a local/runtime verification detail, not a project-wide GPU compatibility claim.
+## Task 39 — CLOSED / VERIFIED
+
+- Canonical local developer startup documentation.
+- Environment/configuration consistency.
+- Canonical developer command documentation.
+- Developer readiness smoke check.
+- Docker Compose ↔ host Ollama connectivity stabilization.
+- Reset/troubleshooting guidance.
+- Verification: Compose PostgreSQL/backend runtime verified; Docker backend reached host Ollama through `host.docker.internal`; `gemma4:latest` was available; backend regression passed 301/301 tests.
+
+## Task 40 — CLOSED / VERIFIED
+
+- Batch 3A — Backend Conversation Search & Pagination: CLOSED.
+- Added authenticated conversation search by title with server-side pagination.
+- Conversation responses expose `conversations`, `total_count`, `page`, and `page_size`.
+- Ownership filtering, deterministic ordering, total-count calculation, and page boundaries are preserved.
+- Backend regression suite passed after Batch 3A changes.
+- Batch 3A commit: `c8446a8`.
+
+- Batch 3B — Frontend Conversation Search & Pagination: CLOSED.
+- Added conversation search submission with page reset to page 1.
+- Added frontend conversation pagination controls with previous/next boundary handling.
+- Preserved conversation deletion behavior across pagination boundaries.
+- Preserved new-conversation synchronization and updated the conversation total count after synchronization.
+- Updated the conversation API client and frontend response types for search/pagination parameters and paginated responses.
+- Added frontend API and ChatPage coverage for search, pagination, and search pagination reset.
+- Frontend regression suite: 76 tests passing.
+- Frontend production build: verified successfully.
+- Batch 3B commit: `3b9adf9`.
+- Both Batch 3A and Batch 3B were pushed to `origin/main`.
+
+## Task 41 — RAG Tenant Isolation & Security Verification
+
+**Status:** CLOSED / VERIFIED LOCALLY
+
+Task 41 completed the owner-aware vector isolation work and its verification.
+
+Verified state:
+- owner-aware vector indexing
+- owner-scoped retrieval
+- Chroma owner filtering
+- reciprocal/identical-content security coverage
+- fail-closed handling of ownerless legacy vectors
+- documented legacy-vector rebuild/reindex/reset lifecycle guidance
+
+Latest Task 41 commit:
+`215b5d6 test(security): close rag tenant isolation verification`
+
+Task 41 is verified and included in the released history.
+
+## Current Verified Repository State
+
+- Backend test inventory: 29 test files and 338 test methods/functions currently present in `backend/tests/`.
+- Frontend test inventory: 4 test files currently present under `frontend/src/`.
+- Task 40 is CLOSED / VERIFIED LOCALLY, including document search/pagination and conversation search/pagination with corresponding frontend/backend verification.
+- Task 41 is CLOSED / VERIFIED LOCALLY, including owner-aware vector indexing, owner-scoped retrieval, Chroma owner filtering, reciprocal/identical-content isolation coverage, fail-closed ownerless-vector behavior, and legacy-vector lifecycle guidance.
+- Project completion is now in Task 42 release-readiness/documentation reconciliation; this does not define or invent a historical Task 42 scope.
+
+- Task 42 Batch 1 is CLOSED / VERIFIED.
+- Task 42 Batch 2 is CLOSED / VERIFIED.
+- Task 42 final release-readiness audit is CLOSED / VERIFIED.
+- No required follow-up Tasks 43–45 exist for the current project scope.
+- Project status: COMPLETE / PORTFOLIO-READY.
+- Released commit: `0789c9a`.
+- Released branch: `main`.
+- `origin/main` contains the released state.
+- There is no active Next Task for the current project scope.
+
+## Current Runtime Contract
+
+The Docker backend startup command launches Uvicorn directly. It does not automatically execute `alembic upgrade head`. The documented local startup workflow therefore requires an explicit Alembic migration step before starting the database-backed backend. Task 42 Batch 2 verified this migration contract against fresh migrated and unmigrated databases. The migration system is functional; migrations are an explicit/manual startup prerequisite rather than an automatic container-start action.
+
+
+## Portfolio Delivery Refresh — 2026-11-20
+
+- Product presentation refreshed under the name DocuMind AI with an enterprise-style responsive visual system and updated browser metadata/favicon.
+- Added Windows launcher scripts for startup, app opening, status/log inspection, and safe stop (persistent volumes are preserved).
+- Docker Compose now includes PostgreSQL, Ollama, a model-pull initialization service, FastAPI, and Nginx-served React frontend.
+- Backend container applies Alembic migrations through its entrypoint before starting Uvicorn.
+- Added `/ready` database readiness probe; `/health` remains a liveness endpoint.
+- Synchronous document indexing is moved to Starlette's thread pool so it does not block the FastAPI event loop.
+- Added a portfolio/interview guide with demo flow, architecture, engineering trade-offs, evaluation caveats, limitations, and a resume-ready description.
+- Local `.env` contains generated development secrets; do not commit or publish it.
+- Validation in this delivery environment: Python compile check passed; 43 focused backend tests and 4 subtests passed; Compose YAML parsed successfully. Docker is unavailable here, and frontend dependency installation timed out, so Docker runtime and frontend production build were not verified in this environment.

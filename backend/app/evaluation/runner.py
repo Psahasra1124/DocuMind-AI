@@ -1,0 +1,394 @@
+import argparse
+from dataclasses import dataclass
+import json
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from typing import Any, Callable, Sequence
+
+from app.core.config import settings
+from app.evaluation.dataset import (
+    EvaluationCase,
+    GroundingCase,
+    load_dataset,
+    load_grounding_dataset,
+)
+from app.evaluation.grounding import evaluate_grounding
+from app.services.document_indexing import DocumentIndexer
+from app.services.embeddings.sentence_transformer import SentenceTransformerEmbeddingProvider
+from app.services.retrieval import Retriever
+from app.services.vector_store.chroma import ChromaVectorStore
+from app.evaluation.metrics import (
+    EvaluationMetrics,
+    calculate_metrics,
+    chunk_key,
+)
+
+
+class EvaluationRunnerError(ValueError):
+    """Raised when injected evaluation retrieval data is invalid."""
+
+
+RetrievalFunction = Callable[
+    [EvaluationCase, int],
+    Sequence[Any],
+]
+
+
+def _as_chunk_id(value: Any) -> str:
+    if isinstance(value, str):
+        if not value.strip():
+            raise EvaluationRunnerError(
+                "Injected retrieval result contains an empty chunk id"
+            )
+        return value
+
+    try:
+        return chunk_key(
+            value.document_id,
+            value.chunk_index,
+        )
+    except AttributeError as exc:
+        raise EvaluationRunnerError(
+            "Injected retrieval results must be chunk-id strings "
+            "or objects exposing document_id and chunk_index"
+        ) from exc
+
+
+@dataclass(frozen=True)
+class EvaluationResult:
+    evaluation: str
+    k: int
+    cases: int
+    metrics: EvaluationMetrics
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "evaluation": self.evaluation,
+            "k": self.k,
+            "cases": self.cases,
+            "metrics": {
+                "recall_at_k": self.metrics.recall_at_k,
+                "precision_at_k": self.metrics.precision_at_k,
+                "hit_rate_at_k": self.metrics.hit_rate_at_k,
+            },
+        }
+
+
+@dataclass(frozen=True)
+class GroundingRunnerResult:
+    evaluation: str
+    cases: int
+    matched_count: int
+    expected_count: int
+    evidence_coverage: float
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "cases": self.cases,
+            "evaluation": self.evaluation,
+            "metrics": {
+                "evidence_coverage": self.evidence_coverage,
+                "expected_count": self.expected_count,
+                "matched_count": self.matched_count,
+            },
+        }
+
+
+def run_evaluation(
+    dataset: Sequence[EvaluationCase],
+    retrieve: RetrievalFunction,
+    k: int,
+    *,
+    evaluation_name: str = "retrieval-v1",
+) -> EvaluationResult:
+    if not dataset:
+        raise EvaluationRunnerError("dataset must not be empty")
+
+    retrieved_by_case: dict[str, list[str]] = {}
+
+    for case in dataset:
+        raw_results = retrieve(case, k)
+        if raw_results is None:
+            raise EvaluationRunnerError(
+                f"Retriever returned None for case {case.id}"
+            )
+
+        retrieved_by_case[case.id] = [
+            _as_chunk_id(result)
+            for result in raw_results
+        ]
+
+    metrics = calculate_metrics(
+        dataset,
+        retrieved_by_case,
+        k,
+    )
+
+    return EvaluationResult(
+        evaluation=evaluation_name,
+        k=k,
+        cases=len(dataset),
+        metrics=metrics,
+    )
+
+
+def run_grounding_evaluation(
+    dataset: Sequence[GroundingCase],
+    *,
+    evaluation_name: str = "grounding-v1",
+    sources_by_case: dict[str, Sequence[str]] | None = None,
+) -> GroundingRunnerResult:
+    if not dataset:
+        raise EvaluationRunnerError("dataset must not be empty")
+
+    coverages: list[float] = []
+    total_matched = 0
+    total_expected = 0
+
+    for case in dataset:
+        if sources_by_case is not None:
+            if case.id not in sources_by_case:
+                raise EvaluationRunnerError(
+                    f"Missing source texts for case {case.id}"
+                )
+            sources = sources_by_case[case.id]
+        else:
+            sources = case.source_texts
+
+        result = evaluate_grounding(case.expected_evidence, sources)
+        coverages.append(result.coverage)
+        total_matched += result.matched_count
+        total_expected += result.expected_count
+
+    macro_coverage = sum(coverages) / len(coverages)
+
+    return GroundingRunnerResult(
+        evaluation=evaluation_name,
+        cases=len(dataset),
+        matched_count=total_matched,
+        expected_count=total_expected,
+        evidence_coverage=macro_coverage,
+    )
+
+
+def _load_fixture_results(path: Path) -> dict[str, list[str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise EvaluationRunnerError(
+            f"Retrieval results file not found: {path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise EvaluationRunnerError(
+            f"Retrieval results file is not valid JSON: {path}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise EvaluationRunnerError(
+            "Retrieval results root must be a JSON object keyed by case id"
+        )
+
+    results: dict[str, list[str]] = {}
+
+    for case_id, values in payload.items():
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise EvaluationRunnerError(
+                "Retrieval result case ids must be non-empty strings"
+            )
+
+        if not isinstance(values, list):
+            raise EvaluationRunnerError(
+                f"Retrieval results for {case_id} must be a JSON array"
+            )
+
+        normalized: list[str] = []
+        for position, value in enumerate(values):
+            if not isinstance(value, str) or not value.strip():
+                raise EvaluationRunnerError(
+                    f"Retrieval result {case_id}[{position}] "
+                    "must be a non-empty string"
+                )
+            normalized.append(value)
+
+        results[case_id] = normalized
+
+    return results
+
+
+def _load_fixture_sources(path: Path) -> dict[str, list[str]]:
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError as exc:
+        raise EvaluationRunnerError(
+            f"Grounding sources file not found: {path}"
+        ) from exc
+    except json.JSONDecodeError as exc:
+        raise EvaluationRunnerError(
+            f"Grounding sources file is not valid JSON: {path}"
+        ) from exc
+
+    if not isinstance(payload, dict):
+        raise EvaluationRunnerError(
+            "Grounding sources root must be a JSON object keyed by case id"
+        )
+
+    results: dict[str, list[str]] = {}
+
+    for case_id, values in payload.items():
+        if not isinstance(case_id, str) or not case_id.strip():
+            raise EvaluationRunnerError(
+                "Grounding source case ids must be non-empty strings"
+            )
+
+        if not isinstance(values, list):
+            raise EvaluationRunnerError(
+                f"Grounding sources for {case_id} must be a JSON array"
+            )
+
+        normalized: list[str] = []
+        for position, value in enumerate(values):
+            if not isinstance(value, str) or not value.strip():
+                raise EvaluationRunnerError(
+                    f"Grounding source {case_id}[{position}] "
+                    "must be a non-empty string"
+                )
+            normalized.append(value)
+
+        results[case_id] = normalized
+
+    return results
+
+
+def _run_real_evaluation(
+    dataset: Sequence[EvaluationCase],
+    k: int,
+) -> EvaluationResult:
+    corpus = Path(__file__).resolve().parents[2] / "evaluation" / "corpus"
+
+    documents = [
+        ("document-alpha", corpus / "document-alpha.txt"),
+        ("document-beta", corpus / "document-beta.txt"),
+        ("document-gamma", corpus / "document-gamma.txt"),
+    ]
+
+    embedding_provider = SentenceTransformerEmbeddingProvider(
+        settings.EMBEDDING_MODEL,
+    )
+
+    with TemporaryDirectory(prefix="ai-rag-eval-") as temp_dir:
+        vector_store = ChromaVectorStore(
+            persist_directory=Path(temp_dir),
+            collection_name="retrieval_eval_v1",
+        )
+
+        indexer = DocumentIndexer(
+            embedding_provider=embedding_provider,
+            vector_store=vector_store,
+        )
+
+        for document_id, file_path in documents:
+            indexer.index_document(
+                document_id=document_id,
+                file_path=file_path,
+                owner_id="evaluation",
+            )
+
+        retriever = Retriever(
+            embedding_provider=embedding_provider,
+            vector_store=vector_store,
+        )
+
+        return run_evaluation(
+            dataset,
+            lambda case, limit: retriever.retrieve(
+                case.query,
+                top_k=limit,
+                owner_id="evaluation",
+            ),
+            k,
+            evaluation_name="retrieval-v1-real",
+        )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Run deterministic retrieval or grounding evaluation."
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["retrieval", "grounding"],
+        default="retrieval",
+        help="Evaluation mode: 'retrieval' (default) or 'grounding'.",
+    )
+    parser.add_argument(
+        "--dataset",
+        required=True,
+        type=Path,
+        help="Path to evaluation dataset JSON file.",
+    )
+    parser.add_argument(
+        "--results",
+        required=False,
+        type=Path,
+        help=(
+            "Optional JSON object mapping evaluation case ids to retrieved "
+            "stable chunk ids. Without this option, real retrieval is used."
+        ),
+    )
+    parser.add_argument(
+        "--sources",
+        required=False,
+        type=Path,
+        help=(
+            "Optional JSON object mapping grounding case ids to source texts. "
+            "Without this option, source texts from the grounding dataset are used."
+        ),
+    )
+    parser.add_argument(
+        "--k",
+        required=False,
+        type=int,
+        help="Top-k retrieval parameter (required for retrieval evaluation).",
+    )
+
+    args = parser.parse_args()
+
+    if args.mode == "grounding":
+        dataset = load_grounding_dataset(args.dataset)
+
+        sources_by_case = None
+        if args.sources is not None:
+            sources_by_case = _load_fixture_sources(args.sources)
+
+        result = run_grounding_evaluation(
+            dataset,
+            evaluation_name=args.dataset.stem,
+            sources_by_case=sources_by_case,
+        )
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    else:
+        if args.k is None:
+            parser.error("--k is required for retrieval evaluation")
+
+        dataset = load_dataset(args.dataset)
+
+        if args.results is not None:
+            fixture_results = _load_fixture_results(args.results)
+
+            result = run_evaluation(
+                dataset,
+                lambda case, _k: fixture_results.get(case.id, []),
+                args.k,
+                evaluation_name=args.dataset.stem,
+            )
+        else:
+            result = _run_real_evaluation(
+                dataset,
+                args.k,
+            )
+
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

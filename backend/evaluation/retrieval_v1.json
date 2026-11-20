@@ -1,0 +1,43 @@
+[
+  {
+    "id": "retrieval-001",
+    "query": "termination notice period",
+    "relevant_chunk_ids": [
+      "document-alpha:0"
+    ]
+  },
+  {
+    "id": "retrieval-002",
+    "query": "when must invoices be paid",
+    "relevant_chunk_ids": [
+      "document-alpha:0"
+    ]
+  },
+  {
+    "id": "retrieval-003",
+    "query": "conditions for renewing the agreement",
+    "relevant_chunk_ids": [
+      "document-alpha:0",
+      "document-alpha:1"
+    ]
+  },
+  {
+    "id": "retrieval-004",
+    "query": "where is the Project Beta office located",
+    "relevant_chunk_ids": [
+      "document-beta:0"
+    ]
+  },
+  {
+    "id": "retrieval-005",
+    "query": "how are backup recovery drills verified",
+    "relevant_chunk_ids": [
+      "document-gamma:0"
+    ]
+  },
+  {
+    "id": "retrieval-006",
+    "query": "quantum entanglement laboratory procedure",
+    "relevant_chunk_ids": []
+  }
+]
