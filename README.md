@@ -1,6 +1,6 @@
 # DocuMind AI - AI-Powered Document Intelligence Platform
 
-DocuMind AI is a full-stack document question-answering application that lets users upload documents and ask questions grounded in their uploaded content. The platform combines a React interface, a FastAPI backend, local embeddings, persistent vector search, PostgreSQL, and a locally hosted Ollama language model.
+DocuMind AI is a full-stack document question-answering application that lets users upload documents and ask questions grounded in their uploaded content. The platform combines a React interface, a FastAPI backend, local embeddings, persistent vector search, PostgreSQL, and a language model selected for local development or cloud deployment.
 
 ## Table of Contents
 
@@ -80,7 +80,7 @@ DocuMind AI addresses this problem by:
 - Sentence Transformers
 - ChromaDB
 - Ollama HTTP API
-- Google Gemini API
+- Cloudflare Workers AI REST API
 
 ### Data and Infrastructure
 
@@ -118,8 +118,8 @@ Nginx --> FastAPI API
               +--> Ollama
                    - Gemma 3 4B (local default)
               |
-              +--> Google Gemini API
-                   - gemini-2.5-flash (cloud option)
+              +--> Cloudflare Workers AI
+                   - @cf/meta/llama-3.3-70b-instruct-fp8-fast (cloud option)
 ```
 
 The Docker deployment runs PostgreSQL, Ollama, the FastAPI backend, and the Nginx frontend in a shared Compose network. Uploaded files and the persistent vector index are stored in Docker volumes.
@@ -220,16 +220,17 @@ OLLAMA_MODEL=gemma3:4b
 OLLAMA_TIMEOUT_SECONDS=300
 ```
 
-Google Gemini cloud deployment:
+Cloudflare Workers AI deployment:
 
 ```dotenv
-LLM_PROVIDER=gemini
-GEMINI_API_KEY=<your-google-gemini-api-key>
-GEMINI_MODEL=gemini-2.5-flash
-GEMINI_TIMEOUT_SECONDS=60
+LLM_PROVIDER=cloudflare
+CLOUDFLARE_ACCOUNT_ID=<your-cloudflare-account-id>
+CLOUDFLARE_API_TOKEN=<your-cloudflare-api-token>
+CLOUDFLARE_MODEL=@cf/meta/llama-3.3-70b-instruct-fp8-fast
+CLOUDFLARE_TIMEOUT_SECONDS=90
 ```
 
-Set `GEMINI_API_KEY` only in backend or deployment environment variables. The key is never added to React/Vite code or sent to the frontend.
+For Render, set `LLM_PROVIDER=cloudflare`, `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, and `CLOUDFLARE_MODEL` in the backend service environment. `CLOUDFLARE_TIMEOUT_SECONDS` is optional and defaults to `90`. Keep the account ID and API token in Render only; neither value is sent to or exposed by the React/Vite frontend. The default model ID is listed in the [Cloudflare Workers AI model catalog](https://developers.cloudflare.com/workers-ai/models/llama-3.3-70b-instruct-fp8-fast/).
 
 ### 3. Docker setup (recommended)
 
@@ -267,6 +268,8 @@ Database: ai_document_rag
 Port: 5433
 User: postgres
 ```
+
+The application converts PostgreSQL URLs to `postgresql+asyncpg://` for FastAPI. Alembic migrations use a synchronous `postgresql+psycopg2://` URL derived from the same `DATABASE_URL`; set `SYNC_DATABASE_URL` only if the deployment needs a separate migration connection. For hosted PostgreSQL providers such as Neon, use the provider's PostgreSQL URL as `DATABASE_URL` and keep credentials in the deployment's secret environment settings.
 
 #### Start Ollama
 

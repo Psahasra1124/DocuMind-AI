@@ -18,6 +18,7 @@ from app.main import app
 from app.schemas.chat import ChatSource
 from app.services.chat import ChatResponse
 from app.services.chat_factory import get_chat_service
+from app.services.llm import CloudflareRateLimitError, CloudflareTimeoutError
 
 
 class ChatEndpointTests(unittest.TestCase):
@@ -327,6 +328,31 @@ class ChatEndpointTests(unittest.TestCase):
             "chat failure",
             response.text,
         )
+
+    def test_cloudflare_rate_limit_returns_retryable_status(self):
+        self.fake_chat_service.chat.side_effect = CloudflareRateLimitError(
+            "Cloudflare Workers AI rate limit exceeded. Retry later."
+        )
+
+        response = self.client.post(
+            "/chat",
+            json={"query": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.headers["retry-after"], "30")
+
+    def test_cloudflare_timeout_returns_gateway_timeout(self):
+        self.fake_chat_service.chat.side_effect = CloudflareTimeoutError(
+            "Cloudflare Workers AI request timed out. Please try again."
+        )
+
+        response = self.client.post(
+            "/chat",
+            json={"query": "hello"},
+        )
+
+        self.assertEqual(response.status_code, 504)
 
     def test_existing_upload_and_retrieval_routes_remain_registered(self):
         paths = app.openapi()["paths"]

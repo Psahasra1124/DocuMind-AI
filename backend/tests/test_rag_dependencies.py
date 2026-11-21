@@ -10,7 +10,7 @@ os.environ.setdefault("JWT_SECRET_KEY", "test-only-jwt-secret-key-32-bytes-long"
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
 
 from app.services.llm import (
-    GeminiLLMProvider,
+    CloudflareWorkersAIProvider,
     LLMProvider,
     OllamaLLMProvider,
 )
@@ -50,26 +50,30 @@ class RagDependencyTests(unittest.TestCase):
             77.0,
         )
 
-    def test_get_llm_provider_returns_gemini_provider_from_settings(self):
+    def test_get_llm_provider_returns_cloudflare_provider_from_settings(self):
         with patch(
             "app.services.rag_factory.settings.LLM_PROVIDER",
-            "gemini",
+            "cloudflare",
         ), patch(
-            "app.services.rag_factory.settings.GEMINI_API_KEY",
-            "test-api-key",
+            "app.services.rag_factory.settings.CLOUDFLARE_ACCOUNT_ID",
+            "test-account-id",
         ), patch(
-            "app.services.rag_factory.settings.GEMINI_MODEL",
-            "gemini-test",
+            "app.services.rag_factory.settings.CLOUDFLARE_API_TOKEN",
+            "test-api-token",
         ), patch(
-            "app.services.rag_factory.settings.GEMINI_TIMEOUT_SECONDS",
+            "app.services.rag_factory.settings.CLOUDFLARE_MODEL",
+            "@cf/test/model",
+        ), patch(
+            "app.services.rag_factory.settings.CLOUDFLARE_TIMEOUT_SECONDS",
             88.0,
         ):
             provider = get_llm_provider()
 
-        self.assertIsInstance(provider, GeminiLLMProvider)
+        self.assertIsInstance(provider, CloudflareWorkersAIProvider)
         self.assertIsInstance(provider, LLMProvider)
-        self.assertEqual(provider.api_key, "test-api-key")
-        self.assertEqual(provider.model_name, "gemini-test")
+        self.assertEqual(provider.account_id, "test-account-id")
+        self.assertEqual(provider.api_token, "test-api-token")
+        self.assertEqual(provider.model_name, "@cf/test/model")
         self.assertEqual(provider.timeout, 88.0)
 
     def test_get_rag_service_receives_existing_retriever(self):

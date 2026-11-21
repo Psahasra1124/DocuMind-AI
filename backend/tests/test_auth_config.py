@@ -137,6 +137,31 @@ class SettingsSecurityTests(unittest.TestCase):
             "postgresql+psycopg2://db-user:db-password@localhost/app",
         )
 
+    def test_cloudflare_provider_requires_backend_credentials(self):
+        with self.assertRaises(ValidationError) as context:
+            Settings(
+                DATABASE_URL=self.DATABASE_URL,
+                JWT_SECRET_KEY=self.VALID_SECRET,
+                LLM_PROVIDER="cloudflare",
+            )
+
+        self.assertIn("CLOUDFLARE_ACCOUNT_ID", str(context.exception))
+
+    def test_cloudflare_provider_accepts_configured_credentials(self):
+        settings = Settings(
+            DATABASE_URL=self.DATABASE_URL,
+            JWT_SECRET_KEY=self.VALID_SECRET,
+            LLM_PROVIDER="CLOUDFLARE",
+            CLOUDFLARE_ACCOUNT_ID="test-account-id",
+            CLOUDFLARE_API_TOKEN="test-api-token",
+        )
+
+        self.assertEqual(settings.LLM_PROVIDER, "cloudflare")
+        self.assertEqual(
+            settings.CLOUDFLARE_MODEL,
+            "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

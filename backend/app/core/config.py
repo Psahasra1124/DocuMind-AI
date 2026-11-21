@@ -4,6 +4,8 @@ from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
+from app.services.llm.cloudflare import DEFAULT_CLOUDFLARE_MODEL
+
 
 DEFAULT_CORS_ORIGINS = (
     "http://localhost:5173",
@@ -43,9 +45,10 @@ class Settings(BaseSettings):
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_MODEL: str = "gemma3:4b"
     OLLAMA_TIMEOUT_SECONDS: float = 300.0
-    GEMINI_API_KEY: str | None = None
-    GEMINI_MODEL: str = "gemini-2.5-flash"
-    GEMINI_TIMEOUT_SECONDS: float = 60.0
+    CLOUDFLARE_ACCOUNT_ID: str | None = None
+    CLOUDFLARE_API_TOKEN: str | None = None
+    CLOUDFLARE_MODEL: str = DEFAULT_CLOUDFLARE_MODEL
+    CLOUDFLARE_TIMEOUT_SECONDS: float = 90.0
     MAX_UPLOAD_SIZE_MB: int = 25
 
     model_config = SettingsConfigDict(
@@ -76,11 +79,11 @@ class Settings(BaseSettings):
     @classmethod
     def validate_llm_provider(cls, value: str) -> str:
         normalized = value.strip().lower()
-        if normalized not in {"ollama", "gemini"}:
-            raise ValueError("LLM_PROVIDER must be 'ollama' or 'gemini'")
+        if normalized not in {"ollama", "cloudflare"}:
+            raise ValueError("LLM_PROVIDER must be 'ollama' or 'cloudflare'")
         return normalized
 
-    @field_validator("GEMINI_TIMEOUT_SECONDS", "OLLAMA_TIMEOUT_SECONDS")
+    @field_validator("CLOUDFLARE_TIMEOUT_SECONDS", "OLLAMA_TIMEOUT_SECONDS")
     @classmethod
     def validate_llm_timeout(cls, value: float) -> float:
         if value <= 0:
@@ -112,6 +115,27 @@ class Settings(BaseSettings):
             raise ValueError("CORS_ORIGINS must contain at least one origin")
 
         return origins
+
+    @model_validator(mode="after")
+    def validate_cloudflare_settings(self):
+        if self.LLM_PROVIDER == "cloudflare":
+            if (
+                not self.CLOUDFLARE_ACCOUNT_ID
+                or not self.CLOUDFLARE_ACCOUNT_ID.strip()
+            ):
+                raise ValueError(
+                    "CLOUDFLARE_ACCOUNT_ID is required when "
+                    "LLM_PROVIDER=cloudflare"
+                )
+            if (
+                not self.CLOUDFLARE_API_TOKEN
+                or not self.CLOUDFLARE_API_TOKEN.strip()
+            ):
+                raise ValueError(
+                    "CLOUDFLARE_API_TOKEN is required when "
+                    "LLM_PROVIDER=cloudflare"
+                )
+        return self
 
     @model_validator(mode="after")
     def validate_cors_origins(self):
