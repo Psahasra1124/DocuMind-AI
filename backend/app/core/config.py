@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     CLOUDFLARE_MODEL: str = DEFAULT_CLOUDFLARE_MODEL
     CLOUDFLARE_TIMEOUT_SECONDS: float = 90.0
     MAX_UPLOAD_SIZE_MB: int = 25
+    MAX_PDF_SIZE_MB: int = 10
+    MAX_DOCUMENT_COUNT: int = 20
+    MAX_TOTAL_INDEXED_CHUNKS: int = 2000
 
     model_config = SettingsConfigDict(
         env_file="../.env",
@@ -73,6 +76,29 @@ class Settings(BaseSettings):
     def validate_max_upload_size(cls, value: int) -> int:
         if value < 1 or value > 250:
             raise ValueError("MAX_UPLOAD_SIZE_MB must be between 1 and 250")
+        return value
+
+    @field_validator("MAX_PDF_SIZE_MB")
+    @classmethod
+    def validate_max_pdf_size(cls, value: int) -> int:
+        if value < 1 or value > 250:
+            raise ValueError("MAX_PDF_SIZE_MB must be between 1 and 250")
+        return value
+
+    @field_validator("MAX_DOCUMENT_COUNT")
+    @classmethod
+    def validate_max_document_count(cls, value: int) -> int:
+        if value < 1 or value > 1000:
+            raise ValueError("MAX_DOCUMENT_COUNT must be between 1 and 1000")
+        return value
+
+    @field_validator("MAX_TOTAL_INDEXED_CHUNKS")
+    @classmethod
+    def validate_max_total_indexed_chunks(cls, value: int) -> int:
+        if value < 1 or value > 100000:
+            raise ValueError(
+                "MAX_TOTAL_INDEXED_CHUNKS must be between 1 and 100000"
+            )
         return value
 
     @field_validator("LLM_PROVIDER")

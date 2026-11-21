@@ -23,9 +23,16 @@ from app.api.dependencies.auth import get_current_user
 from app.db.database import get_db
 from app.api.routes.documents import upload_document
 from app.api.routes.documents import list_documents
+from app.services.document_indexing import DocumentChunkLimitExceeded
 from app.schemas.documents import DocumentListResponse
 from app.db.models import Document, User
 from app.main import app
+
+
+def configure_document_count(mock_db, count=0):
+    mock_db.execute = AsyncMock(
+        return_value=Mock(scalar_one=Mock(return_value=count))
+    )
 
 
 class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
@@ -36,6 +43,7 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
             is_active=True,
         )
         self.mock_db = mock.Mock()
+        configure_document_count(self.mock_db)
         self.mock_db.commit = mock.AsyncMock()
         self.mock_db.refresh = mock.AsyncMock()
         self.mock_db.rollback = mock.AsyncMock()
@@ -71,6 +79,87 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(response.status_code, 201)
+
+    async def test_document_count_limit_returns_frontend_compatible_detail(self):
+        from app.core.config import settings
+
+        self.mock_db.execute.return_value.scalar_one.return_value = (
+            settings.MAX_DOCUMENT_COUNT
+        )
+        file = UploadFile(
+            filename="document.pdf",
+            file=BytesIO(b"%PDF-test-content"),
+            headers=Headers({"content-type": "application/pdf"}),
+        )
+
+        with mock.patch(
+            "app.api.routes.documents.store_document",
+            new_callable=mock.AsyncMock,
+        ) as mock_store_document:
+            with self.assertRaises(HTTPException) as raised:
+                await upload_document(
+                    file=file,
+                    current_user=self.user,
+                    db=self.mock_db,
+                )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn(
+            "20-document limit",
+            raised.exception.detail,
+        )
+        mock_store_document.assert_not_awaited()
+
+    async def test_chunk_limit_rejection_removes_only_new_upload_artifacts(self):
+        storage_path = Path(str(self.owner_id)) / "document.pdf"
+        mock_indexer = mock.Mock()
+        mock_indexer.index_document.side_effect = DocumentChunkLimitExceeded(
+            "The indexed-chunk limit has been reached."
+        )
+        self.mock_db.delete = mock.AsyncMock()
+
+        with (
+            mock.patch(
+                "app.api.routes.documents.store_document",
+                new_callable=mock.AsyncMock,
+                return_value=str(storage_path),
+            ),
+            mock.patch(
+                "app.api.routes.documents.get_document_indexer",
+                return_value=mock_indexer,
+            ),
+            mock.patch(
+                "app.api.routes.documents.get_vector_store",
+                return_value=mock.Mock(),
+            ),
+            mock.patch(
+                "app.api.routes.documents.get_storage_root",
+                return_value=Path("/tmp/document-storage"),
+            ),
+            mock.patch(
+                "app.api.routes.documents.delete_document",
+            ) as mock_delete_document,
+        ):
+            file = UploadFile(
+                filename="document.pdf",
+                file=BytesIO(b"%PDF-test-content"),
+                headers=Headers({"content-type": "application/pdf"}),
+            )
+            with self.assertRaises(HTTPException) as raised:
+                await upload_document(
+                    file=file,
+                    current_user=self.user,
+                    db=self.mock_db,
+                )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(
+            raised.exception.detail,
+            "The indexed-chunk limit has been reached.",
+        )
+        self.mock_db.delete.assert_awaited_once()
+        self.assertEqual(self.mock_db.commit.await_count, 2)
+        mock_delete_document.assert_called_once_with(str(storage_path))
 
     def test_rejects_unsupported_document_type(self):
         response = self.client.post(
@@ -119,6 +208,7 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_db = mock.Mock()
+        configure_document_count(mock_db)
         mock_db.commit = mock.AsyncMock()
         mock_db.refresh = mock.AsyncMock()
         mock_db.rollback = mock.AsyncMock()
@@ -199,6 +289,7 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_db = mock.Mock()
+        configure_document_count(mock_db)
         mock_db.commit = mock.AsyncMock()
         mock_db.refresh = mock.AsyncMock()
         mock_db.rollback = mock.AsyncMock()
@@ -274,6 +365,7 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_db = mock.Mock()
+        configure_document_count(mock_db)
         mock_db.commit = mock.AsyncMock()
         mock_db.refresh = mock.AsyncMock()
         mock_db.rollback = mock.AsyncMock()
@@ -433,6 +525,7 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_db = mock.Mock()
+        configure_document_count(mock_db)
         mock_db.commit = mock.AsyncMock(
             side_effect=RuntimeError(
                 "database commit failed"
@@ -486,6 +579,7 @@ class DocumentUploadEndpointTests(unittest.IsolatedAsyncioTestCase):
         )
 
         mock_db = mock.Mock()
+        configure_document_count(mock_db)
         mock_db.commit = mock.AsyncMock(
             side_effect=Exception(
                 "database commit failed"

@@ -36,7 +36,13 @@ async def store_document(
 
     try:
         total_bytes = 0
-        maximum_bytes = settings.MAX_UPLOAD_SIZE_MB * 1024 * 1024
+        is_pdf = Path(file.filename or "").suffix.lower() == ".pdf"
+        maximum_size_mb = (
+            settings.MAX_PDF_SIZE_MB
+            if is_pdf
+            else settings.MAX_UPLOAD_SIZE_MB
+        )
+        maximum_bytes = maximum_size_mb * 1024 * 1024
         with destination.open("xb") as output_file:
             while chunk := await file.read(1024 * 1024):
                 total_bytes += len(chunk)
@@ -44,7 +50,9 @@ async def store_document(
                     raise HTTPException(
                         status_code=status.HTTP_413_CONTENT_TOO_LARGE,
                         detail=(
-                            f"File exceeds the {settings.MAX_UPLOAD_SIZE_MB} MB upload limit"
+                            f"PDF files are limited to {maximum_size_mb} MB"
+                            if is_pdf
+                            else f"Files are limited to {maximum_size_mb} MB"
                         ),
                     )
                 output_file.write(chunk)

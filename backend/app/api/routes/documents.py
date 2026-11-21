@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from typing import Annotated
 from uuid import UUID
 
@@ -16,24 +18,28 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import get_current_user
+from app.core.config import settings
 from app.db.database import get_db
 from app.db.models import Document, User
+from app.schemas.documents import DocumentListResponse, DocumentResponse
+from app.services.document_deletion import DocumentDeletionService
+from app.services.document_indexing import DocumentChunkLimitExceeded
+from app.services.document_indexing_factory import get_document_indexer
 from app.services.document_storage import (
     delete_document,
     get_storage_root,
     store_document,
 )
 from app.services.document_validation import validate_document_upload
-from app.services.document_deletion import DocumentDeletionService
-from app.services.document_indexing_factory import get_document_indexer
 from app.services.vector_store_factory import get_vector_store
-from app.schemas.documents import DocumentListResponse, DocumentResponse
 
 
 router = APIRouter(
     prefix="/documents",
     tags=["documents"],
 )
+_UPLOAD_LOCK = asyncio.Lock()
+logger = logging.getLogger(__name__)
 
 
 @router.get(
@@ -89,6 +95,31 @@ async def upload_document(
 ):
     validate_document_upload(file)
 
+    async with _UPLOAD_LOCK:
+        document_count_result = await db.execute(
+            select(func.count(Document.id)).where(
+                Document.owner_id == current_user.id
+            )
+        )
+        document_count = document_count_result.scalar_one()
+        if document_count >= settings.MAX_DOCUMENT_COUNT:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    "Your workspace has reached the "
+                    f"{settings.MAX_DOCUMENT_COUNT}-document limit. "
+                    "Delete a document before uploading another."
+                ),
+            )
+
+        return await _store_and_index_document(file, current_user, db)
+
+
+async def _store_and_index_document(
+    file: UploadFile,
+    current_user: User,
+    db: AsyncSession,
+):
     storage_path = await store_document(
         file,
         current_user.id,
@@ -120,13 +151,24 @@ async def upload_document(
             file_path=get_storage_root() / document.storage_path,
             owner_id=str(current_user.id),
         )
+    except DocumentChunkLimitExceeded as exc:
+        await db.delete(document)
+        await db.commit()
+        delete_document(storage_path)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     except Exception:
         try:
             vector_store.delete_by_document_id(
                 str(document.id)
             )
         except Exception:
-            pass
+            logger.exception(
+                "Failed to clean up vectors after document indexing failed",
+                extra={"document_id": str(document.id)},
+            )
         raise
 
     return document

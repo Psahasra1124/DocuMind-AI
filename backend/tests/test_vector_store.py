@@ -144,6 +144,34 @@ class VectorStoreTests(unittest.TestCase):
                 0,
             )
 
+    def test_count_methods_and_upsert_keep_reindexing_idempotent(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            store = ChromaVectorStore(
+                persist_directory=Path(temp_dir),
+                collection_name="test_collection",
+            )
+            metadata = {"document_id": "document-a"}
+            store.add(
+                ids=["document-a:0"],
+                embeddings=[[1.0, 0.0]],
+                texts=["original"],
+                metadatas=[metadata],
+            )
+            store.add(
+                ids=["document-a:0"],
+                embeddings=[[0.0, 1.0]],
+                texts=["updated"],
+                metadatas=[metadata],
+            )
+
+            self.assertEqual(store.count(), 1)
+            self.assertEqual(store.count_by_document_id("document-a"), 1)
+            self.assertEqual(store.count_by_document_id("missing"), 0)
+            self.assertEqual(
+                store.collection.get(ids=["document-a:0"])["documents"],
+                ["updated"],
+            )
+
     def test_delete_by_document_id_rejects_empty_document_id(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             store = ChromaVectorStore(

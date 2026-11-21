@@ -40,3 +40,11 @@ class VectorStore(ABC):
     @abstractmethod
     def delete_by_document_id(self, document_id: str) -> None:
         """Delete all vectors belonging to the specified document."""
+
+    @abstractmethod
+    def count(self) -> int:
+        """Return the number of indexed vectors."""
+
+    @abstractmethod
+    def count_by_document_id(self, document_id: str) -> int:
+        """Return the number of indexed vectors for one document."""

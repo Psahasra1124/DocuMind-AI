@@ -162,6 +162,41 @@ class SettingsSecurityTests(unittest.TestCase):
             "@cf/meta/llama-3.3-70b-instruct-fp8-fast",
         )
 
+    def test_document_limit_defaults_are_conservative_and_configurable(self):
+        settings = Settings(
+            DATABASE_URL=self.DATABASE_URL,
+            JWT_SECRET_KEY=self.VALID_SECRET,
+        )
+
+        self.assertEqual(settings.MAX_PDF_SIZE_MB, 10)
+        self.assertEqual(settings.MAX_DOCUMENT_COUNT, 20)
+        self.assertEqual(settings.MAX_TOTAL_INDEXED_CHUNKS, 2000)
+
+        customized = Settings(
+            DATABASE_URL=self.DATABASE_URL,
+            JWT_SECRET_KEY=self.VALID_SECRET,
+            MAX_PDF_SIZE_MB=8,
+            MAX_DOCUMENT_COUNT=10,
+            MAX_TOTAL_INDEXED_CHUNKS=500,
+        )
+        self.assertEqual(customized.MAX_PDF_SIZE_MB, 8)
+        self.assertEqual(customized.MAX_DOCUMENT_COUNT, 10)
+        self.assertEqual(customized.MAX_TOTAL_INDEXED_CHUNKS, 500)
+
+    def test_invalid_document_limits_are_rejected(self):
+        for field in (
+            "MAX_PDF_SIZE_MB",
+            "MAX_DOCUMENT_COUNT",
+            "MAX_TOTAL_INDEXED_CHUNKS",
+        ):
+            with self.subTest(field=field):
+                with self.assertRaises(ValidationError):
+                    Settings(
+                        DATABASE_URL=self.DATABASE_URL,
+                        JWT_SECRET_KEY=self.VALID_SECRET,
+                        **{field: 0},
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()

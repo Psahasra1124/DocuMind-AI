@@ -48,7 +48,7 @@ class ChromaVectorStore(VectorStore):
                 "metadatas must have the same length as ids"
             )
 
-        self.collection.add(
+        self.collection.upsert(
             ids=ids,
             embeddings=embeddings,
             documents=texts,
@@ -106,3 +106,16 @@ class ChromaVectorStore(VectorStore):
         self.collection.delete(
             where={"document_id": document_id},
         )
+
+    def count(self) -> int:
+        return self.collection.count()
+
+    def count_by_document_id(self, document_id: str) -> int:
+        if not document_id:
+            raise ValueError("document_id must not be empty")
+
+        result = self.collection.get(
+            where={"document_id": document_id},
+            include=[],
+        )
+        return len(result["ids"])

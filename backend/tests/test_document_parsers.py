@@ -1,6 +1,7 @@
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
 from app.services.document_parsers.base import DocumentParser
 from app.services.document_parsers.parsers import (
@@ -131,6 +132,26 @@ class DocumentParserTests(unittest.TestCase):
             result = PDFDocumentParser().parse(file_path)
 
         self.assertIn(original_text, result)
+
+    def test_pdf_parser_iterates_pages_and_preserves_page_numbers(self):
+        first_page = Mock()
+        first_page.extract_text.return_value = "first page"
+        second_page = Mock()
+        second_page.extract_text.return_value = "second page"
+        reader = Mock(pages=[first_page, second_page])
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            file_path = Path(temp_dir) / "document.pdf"
+            file_path.write_bytes(b"%PDF-test")
+
+            with patch("pypdf.PdfReader", return_value=reader):
+                pages = PDFDocumentParser().iter_pages(file_path)
+
+                self.assertEqual(next(pages), (1, "first page"))
+                second_page.extract_text.assert_not_called()
+                self.assertEqual(next(pages), (2, "second page"))
+
+        second_page.extract_text.assert_called_once_with()
 
     def test_docx_parser_extracts_text_from_real_file(self):
         original_paragraphs = [

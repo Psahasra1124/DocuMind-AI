@@ -42,10 +42,11 @@ DocuMind AI addresses this problem by:
 - JWT bearer authentication and protected API routes
 - PDF, DOCX, and TXT document uploads
 - Server-side document filename and MIME-type validation
-- 25 MB maximum upload size by default
+- 10 MB maximum PDF size and 25 MB maximum size for other uploads by default
+- Up to 20 documents per user and 2,000 indexed chunks across the local vector store
 - Deterministic text chunking with configurable chunk overlap
 - PDF page-number preservation
-- Local Sentence Transformers embeddings using `all-MiniLM-L6-v2`
+- Lazy-loaded CPU ONNX embeddings using `all-MiniLM-L6-v2`
 - Persistent Chroma vector storage
 - Owner-scoped semantic document search
 - Document-grounded chat responses with source metadata
@@ -147,8 +148,10 @@ The Docker deployment runs PostgreSQL, Ollama, the FastAPI backend, and the Ngin
    - PDF page numbers are retained as chunk metadata.
 
 5. **Embedding**
-   - Each chunk is converted into a vector using `SentenceTransformer`.
-   - The embedding model is configurable through `EMBEDDING_MODEL`.
+   - Chroma's CPU ONNX implementation of `all-MiniLM-L6-v2` creates 384-dimensional vectors.
+   - The ONNX runtime and model are initialized only when the first document or query needs an embedding.
+   - Document chunks are embedded in small batches, and the same model implementation is shared by indexing and retrieval.
+   - Set `EMBEDDING_MODEL=all-MiniLM-L6-v2`; other model names are not supported by this lightweight runtime.
 
 6. **Vector indexing**
    - Chroma stores the chunk text, embedding, document ID, chunk index, owner ID, and available page metadata.
@@ -207,7 +210,16 @@ POSTGRES_PASSWORD=<strong-random-password>
 JWT_SECRET_KEY=<random-secret-of-at-least-32-characters>
 ```
 
-Keep `.env` private and do not publish real secrets. The default Ollama model is `gemma3:4b`, the default embedding model is `all-MiniLM-L6-v2`, and the default upload limit is 25 MB.
+Keep `.env` private and do not publish real secrets. The default Ollama model is `gemma3:4b`, and the default embedding model is `all-MiniLM-L6-v2` using Chroma's CPU ONNX runtime. Default upload and indexing caps are:
+
+| Setting | Default | Scope |
+| --- | ---: | --- |
+| `MAX_PDF_SIZE_MB` | 10 MB | Per PDF file |
+| `MAX_UPLOAD_SIZE_MB` | 25 MB | Per non-PDF upload |
+| `MAX_DOCUMENT_COUNT` | 20 | Per authenticated user |
+| `MAX_TOTAL_INDEXED_CHUNKS` | 2,000 | Across the Chroma collection |
+
+These conservative caps are intended for a small portfolio deployment. The backend starts at about 119 MiB RSS in the measured container; the ONNX embedding path previously peaked around 324 MiB RSS under the 512 MiB container limit. A 2,000-chunk ceiling limits additional vector and text-index growth. Uploads that exceed a cap are rejected with a readable API `detail` message; existing documents are never removed to make room.
 
 #### Choose the LLM provider
 

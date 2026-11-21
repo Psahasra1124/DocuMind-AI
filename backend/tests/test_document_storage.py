@@ -244,7 +244,6 @@ class DocumentStorageTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_store_document_rejects_files_over_configured_limit(self):
         from fastapi import HTTPException
-        from app.core.config import settings
 
         owner_id = uuid4()
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -254,7 +253,10 @@ class DocumentStorageTests(unittest.IsolatedAsyncioTestCase):
                     "app.services.document_storage.get_storage_root",
                     return_value=storage_root,
                 ),
-                mock.patch.object(settings, "MAX_UPLOAD_SIZE_MB", 1),
+                mock.patch(
+                    "app.services.document_storage.settings.MAX_UPLOAD_SIZE_MB",
+                    1,
+                ),
             ):
                 file = self.create_upload_file(
                     "large.txt",
@@ -264,6 +266,38 @@ class DocumentStorageTests(unittest.IsolatedAsyncioTestCase):
                     await store_document(file, owner_id)
 
             self.assertEqual(raised.exception.status_code, 413)
+            owner_directory = storage_root / str(owner_id)
+            self.assertEqual(list(owner_directory.iterdir()), [])
+
+    async def test_store_document_applies_smaller_pdf_size_limit(self):
+        from fastapi import HTTPException
+
+        owner_id = uuid4()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            storage_root = Path(temp_dir)
+            with (
+                mock.patch(
+                    "app.services.document_storage.get_storage_root",
+                    return_value=storage_root,
+                ),
+                mock.patch(
+                    "app.services.document_storage.settings.MAX_PDF_SIZE_MB",
+                    1,
+                ),
+                mock.patch(
+                    "app.services.document_storage.settings.MAX_UPLOAD_SIZE_MB",
+                    25,
+                ),
+            ):
+                file = self.create_upload_file(
+                    "large.pdf",
+                    b"x" * (1024 * 1024 + 1),
+                )
+                with self.assertRaises(HTTPException) as raised:
+                    await store_document(file, owner_id)
+
+            self.assertEqual(raised.exception.status_code, 413)
+            self.assertIn("PDF files are limited to 1 MB", raised.exception.detail)
             owner_directory = storage_root / str(owner_id)
             self.assertEqual(list(owner_directory.iterdir()), [])
 

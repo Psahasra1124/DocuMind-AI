@@ -36,10 +36,10 @@
 - Focused document chunking tests exist in `backend/tests/test_document_chunking.py`.
 - A provider-independent embedding abstraction exists in `backend/app/services/embeddings/base.py`.
 - The embedding abstraction defines single-text and ordered batch embedding contracts.
-- A local `sentence-transformers` embedding provider is implemented in `backend/app/services/embeddings/sentence_transformer.py`.
-- The concrete provider accepts an explicit model name and does not define a default model or provider configuration yet.
+- A lazy CPU ONNX implementation of `all-MiniLM-L6-v2` is used through Chroma's embedding runtime in `backend/app/services/embeddings/sentence_transformer.py`.
+- Indexing and retrieval share the same cached embedding model, and document indexing persists bounded batches.
 - Focused embedding abstraction tests exist in `backend/tests/test_embeddings.py`.
-- Focused sentence-transformers provider tests exist in `backend/tests/test_sentence_transformer_embeddings.py`.
+- Focused MiniLM ONNX embedding-provider tests exist in `backend/tests/test_sentence_transformer_embeddings.py`.
 
 ## In Progress
 - No implementation task is currently in progress.
@@ -63,7 +63,7 @@
 - Task 9: Implement document text extraction using the parser abstraction — completed and verified with real TXT, PDF, and DOCX files.
 - Task 10: Implement document text chunking for extracted document content — completed in commit `c7a1bb1` and pushed to `origin/main`.
 - Task 11 Batch 1: Add provider-independent embedding abstraction — completed in commit `2f02c3c` and pushed to `origin/main`.
-- Task 11 Batch 2: Implement local `sentence-transformers` embedding provider — completed and verified.
+- Task 11 Batch 2: Implement local MiniLM embeddings — initially implemented with sentence-transformers, now optimized to Chroma's lazy CPU ONNX runtime.
 - Task 11 Batch 3: Add vector-store abstraction and local persistent Chroma backend — completed and verified.
 - Task 12 Batch 1: Add document indexing orchestration service — completed in commit `f1563c7` and verified.
 - Task 12 Batch 2: Integrate document indexing with document upload — completed and verified.
